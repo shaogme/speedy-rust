@@ -14,7 +14,7 @@ Use this action in your workflow to install Rust significantly faster than `rust
 
 ```yaml
 steps:
-  - uses: actions/checkout@v4
+  - uses: actions/checkout@v6
   
   - name: Install Rust
     uses: shaogme/speedy-rust@main
