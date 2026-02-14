@@ -118,6 +118,8 @@ fn main() -> Result<()> {
                         previous_state.nightly_version, current_state.nightly_version
                     );
                 }
+            } else if content.trim() == "{}" {
+                println!("Previous state file is empty, assuming fresh start.");
             } else {
                 eprintln!("Failed to parse previous state file, assuming update needed.");
             }

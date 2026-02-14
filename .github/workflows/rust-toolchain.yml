@@ -6,7 +6,6 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - 'manifest-parser/**'
       - '.github/workflows/rust-toolchain.yml'
 
 permissions:
@@ -33,7 +32,7 @@ jobs:
 
       - name: Fetch previous state
         run: |
-          gh release download state-history -p state.json || echo "{}" > state.json
+          gh release download state-history -p state.json 2>/dev/null || echo "{}" > state.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         continue-on-error: true
@@ -46,7 +45,7 @@ jobs:
           
           docker run --rm -v ${{ github.workspace }}:/work -w /work $IMAGE_NAME \
             --input state.json \
-            --output new_state.json \
+            --output state.json \
             --update-status status.json
           
           STATUS=$(cat status.json)
@@ -65,7 +64,7 @@ jobs:
       - name: Update State History
         if: steps.check.outputs.stable_needs_update == 'true' || steps.check.outputs.nightly_needs_update == 'true'
         run: |
-          gh release create state-history new_state.json --title "State History" --notes "Auto-updated state history" || gh release upload state-history new_state.json --clobber
+          gh release create state-history state.json --title "State History" --notes "Auto-updated state history" || gh release upload state-history state.json --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
