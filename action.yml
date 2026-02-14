@@ -75,18 +75,13 @@ runs:
           rm "toolchain.zip"
         else
           # Linux/macOS: Stream download and extract (zstd)
-          # We use -I zstd for tar. If tar is old, we might need zstd -d | tar x
-          # GitHub runners are modern.
+          # Use explicit zstd decompression pipe to avoid tar subprocess issues (broken pipe on macOS)
           echo "Streaming download and extraction to: $INSTALL_DIR"
           
-          # Check http code first? Hard with pipe. 
-          # We can use curl -f to fail on error.
-          curl -fL "$URL" | tar --use-compress-program=zstd -x -C "$INSTALL_DIR"
-          
-          if [[ $? -ne 0 ]]; then
+          curl -fL "$URL" | zstd -d --stdout | tar -x -C "$INSTALL_DIR" || {
              echo "::error::Failed to download or extract toolchain. URL: $URL"
              exit 1
-          fi
+          }
         fi
         
         # Locate bin directory
