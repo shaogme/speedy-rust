@@ -22,7 +22,7 @@ jobs:
       nightly_needs_update: ${{ steps.check.outputs.nightly_needs_update }}
       nightly_version: ${{ steps.check.outputs.nightly_version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Log in to the Container registry
         uses: docker/login-action@v3
@@ -65,7 +65,7 @@ jobs:
       - name: Update State History
         if: steps.check.outputs.stable_needs_update == 'true' || steps.check.outputs.nightly_needs_update == 'true'
         run: |
-          gh release create state-history new_state.json --title "State History" --notes "Auto-updated state history" --overwrite || gh release upload state-history new_state.json --clobber
+          gh release create state-history new_state.json --title "State History" --notes "Auto-updated state history" || gh release upload state-history new_state.json --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -118,7 +118,7 @@ jobs:
           fi
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: stable-artifacts-${{ matrix.target_os }}
           path: |
@@ -133,12 +133,12 @@ jobs:
       contents: write
     steps:
       - name: Download Linux Artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: stable-artifacts-linux
           
       - name: Download Windows Artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: stable-artifacts-windows
 
@@ -146,13 +146,12 @@ jobs:
         run: ls -R
 
       - name: Upload Release Asset
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: stable
           files: |
             *.tar.gz
             *.zip
-          overwrite: true
 
   build-nightly:
     needs: check-updates
@@ -196,7 +195,7 @@ jobs:
           fi
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: nightly-artifacts-${{ matrix.target_os }}
           path: |
@@ -211,12 +210,12 @@ jobs:
       contents: write
     steps:
       - name: Download Linux Artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: nightly-artifacts-linux
           
       - name: Download Windows Artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: nightly-artifacts-windows
 
@@ -224,10 +223,9 @@ jobs:
         run: ls -R
 
       - name: Upload Release Asset
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: nightly
           files: |
             *.tar.gz
             *.zip
-          overwrite: true
