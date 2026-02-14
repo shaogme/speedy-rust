@@ -161,10 +161,12 @@ jobs:
           
           if [ "${{ matrix.target_os }}" == "windows" ]; then
              pushd "$SYSROOT"
-             7z a "${{ github.workspace }}/${ARTIFACT_NAME}.zip" * -r
+             7z a "${{ github.workspace }}/${ARTIFACT_NAME}.zip" * -r -xr!share/doc -xr!share/man -xr!lib/rustlib/src
              popd
           else
-             tar -czf "${ARTIFACT_NAME}.tar.gz" -C "$SYSROOT" .
+             # Use zstd for better compression and speed
+             # Exclude docs, man pages, and source code to reduce size
+             tar -c --exclude='./share/doc' --exclude='./share/man' --exclude='./lib/rustlib/src' -C "$SYSROOT" . | zstd -T0 -10 -o "${ARTIFACT_NAME}.tar.zst"
           fi
 
       - name: Upload Artifact
@@ -172,7 +174,7 @@ jobs:
         with:
           name: stable-artifacts-${{ matrix.target_os }}-${{ matrix.arch }}
           path: |
-            *.tar.gz
+            *.tar.zst
             *.zip
           retention-days: 1
 
@@ -196,7 +198,7 @@ jobs:
         with:
           tag_name: stable
           files: |
-            *.tar.gz
+            *.tar.zst
             *.zip
 
   build-nightly:
@@ -250,10 +252,10 @@ jobs:
           
           if [ "${{ matrix.target_os }}" == "windows" ]; then
              pushd "$SYSROOT"
-             7z a "${{ github.workspace }}/${ARTIFACT_NAME}.zip" * -r
+             7z a "${{ github.workspace }}/${ARTIFACT_NAME}.zip" * -r -xr!share/doc -xr!share/man -xr!lib/rustlib/src
              popd
           else
-             tar -czf "${ARTIFACT_NAME}.tar.gz" -C "$SYSROOT" .
+             tar -c --exclude='./share/doc' --exclude='./share/man' --exclude='./lib/rustlib/src' -C "$SYSROOT" . | zstd -T0 -10 -o "${ARTIFACT_NAME}.tar.zst"
           fi
 
       - name: Upload Artifact
@@ -261,7 +263,7 @@ jobs:
         with:
           name: nightly-artifacts-${{ matrix.target_os }}-${{ matrix.arch }}
           path: |
-            *.tar.gz
+            *.tar.zst
             *.zip
           retention-days: 1
 
@@ -285,5 +287,5 @@ jobs:
         with:
           tag_name: nightly
           files: |
-            *.tar.gz
+            *.tar.zst
             *.zip

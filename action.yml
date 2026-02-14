@@ -25,16 +25,15 @@ runs:
       run: |
         set -e
         
-        # Detect OS
         if [[ "$RUNNER_OS" == "Linux" ]]; then
           OS_KEY="linux"
-          EXT="tar.gz"
+          EXT="tar.zst"
         elif [[ "$RUNNER_OS" == "Windows" ]]; then
           OS_KEY="windows"
           EXT="zip"
         elif [[ "$RUNNER_OS" == "macOS" ]]; then
           OS_KEY="macos"
-          EXT="tar.gz"
+          EXT="tar.zst"
         else
           echo "::error::Unsupported OS: $RUNNER_OS"
           exit 1
@@ -63,25 +62,32 @@ runs:
         
         echo "Downloading toolchain from: $URL"
         
-        # Download
-        HTTP_CODE=$(curl -L -w "%{http_code}" -o "toolchain.${EXT}" "$URL")
-        if [[ "$HTTP_CODE" != "200" ]]; then
-          echo "::error::Failed to download toolchain. HTTP Code: $HTTP_CODE. URL: $URL"
-          exit 1
-        fi
-        
-        # Extract
-        echo "Extracting to: $INSTALL_DIR"
-        if [[ "$EXT" == "zip" ]]; then
-          # Windows - use 7z (available on GH runners)
-          7z x "toolchain.${EXT}" -o"$INSTALL_DIR" -y > /dev/null
+        if [[ "$OS_KEY" == "windows" ]]; then
+          # Windows: Download then extract
+          HTTP_CODE=$(curl -L -w "%{http_code}" -o "toolchain.zip" "$URL")
+          if [[ "$HTTP_CODE" != "200" ]]; then
+            echo "::error::Failed to download toolchain. HTTP Code: $HTTP_CODE. URL: $URL"
+            exit 1
+          fi
+          
+          echo "Extracting to: $INSTALL_DIR"
+          7z x "toolchain.zip" -o"$INSTALL_DIR" -y > /dev/null
+          rm "toolchain.zip"
         else
-          # Linux/macOS - use tar
-          tar -xzf "toolchain.${EXT}" -C "$INSTALL_DIR"
+          # Linux/macOS: Stream download and extract (zstd)
+          # We use -I zstd for tar. If tar is old, we might need zstd -d | tar x
+          # GitHub runners are modern.
+          echo "Streaming download and extraction to: $INSTALL_DIR"
+          
+          # Check http code first? Hard with pipe. 
+          # We can use curl -f to fail on error.
+          curl -fL "$URL" | tar --use-compress-program=zstd -x -C "$INSTALL_DIR"
+          
+          if [[ $? -ne 0 ]]; then
+             echo "::error::Failed to download or extract toolchain. URL: $URL"
+             exit 1
+          fi
         fi
-        
-        # Cleanup archive
-        rm "toolchain.${EXT}"
         
         # Locate bin directory
         # We expect bin/ to be at the root of INSTALL_DIR, but if the archive has a top-level folder, we search.
