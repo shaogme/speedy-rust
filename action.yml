@@ -32,15 +32,29 @@ runs:
         elif [[ "$RUNNER_OS" == "Windows" ]]; then
           OS_KEY="windows"
           EXT="zip"
+        elif [[ "$RUNNER_OS" == "macOS" ]]; then
+          OS_KEY="macos"
+          EXT="tar.gz"
         else
           echo "::error::Unsupported OS: $RUNNER_OS"
           exit 1
         fi
         
-        echo "Detected OS: $RUNNER_OS ($OS_KEY)"
+        # Detect Architecture
+        ARCH=$(uname -m)
+        if [[ "$ARCH" == "x86_64" ]]; then
+          ARCH_KEY="x64"
+        elif [[ "$ARCH" == "aarch64" ]] || [[ "$ARCH" == "arm64" ]]; then
+          ARCH_KEY="aarch64"
+        else
+          echo "::error::Unsupported Architecture: $ARCH"
+          exit 1
+        fi
+        
+        echo "Detected OS: $RUNNER_OS ($OS_KEY) Arch: $ARCH ($ARCH_KEY)"
         
         # Construct URL
-        FILENAME="rust-${INPUT_TOOLCHAIN}-${OS_KEY}-x64.${EXT}"
+        FILENAME="rust-${INPUT_TOOLCHAIN}-${OS_KEY}-${ARCH_KEY}.${EXT}"
         URL="https://github.com/${INPUT_REPO}/releases/download/${INPUT_TOOLCHAIN}/${FILENAME}"
         
         # Define install path (use runner temp to avoid workspace clutter)
@@ -62,7 +76,7 @@ runs:
           # Windows - use 7z (available on GH runners)
           7z x "toolchain.${EXT}" -o"$INSTALL_DIR" -y > /dev/null
         else
-          # Linux - use tar
+          # Linux/macOS - use tar
           tar -xzf "toolchain.${EXT}" -C "$INSTALL_DIR"
         fi
         

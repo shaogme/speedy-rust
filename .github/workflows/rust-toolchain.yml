@@ -110,13 +110,27 @@ jobs:
     needs: check-updates
     if: needs.check-updates.outputs.stable_needs_update == 'true'
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
             target_os: linux
+            arch: x64
           - os: windows-latest
             target_os: windows
+            arch: x64
+          - os: macos-latest
+            target_os: macos
+            arch: aarch64
+          - os: macos-15-intel
+            target_os: macos
+            arch: x64
+          - os: ubuntu-24.04-arm
+            target_os: linux
+            arch: aarch64
+          - os: windows-11-arm
+            target_os: windows
+            arch: aarch64
     runs-on: ${{ matrix.os }}
     steps:
       - name: Install Rust Stable
@@ -139,12 +153,9 @@ jobs:
       - name: Package Toolchain
         shell: bash
         run: |
-          # Use consistent naming for artifacts
-          # Windows uses zip, Linux uses tar.gz
-          # We need to distinguish OS in artifact filename inside the artifact bundle?
-          # Actually, if we just output a file, we can upload it.
+          # Windows uses zip, Linux/macOS uses tar.gz
           
-          ARTIFACT_NAME="rust-stable-${{ matrix.target_os }}-x64"
+          ARTIFACT_NAME="rust-stable-${{ matrix.target_os }}-${{ matrix.arch }}"
           SYSROOT=$(rustc --print sysroot)
           echo "Packaging Sysroot: $SYSROOT"
           
@@ -159,7 +170,7 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v6
         with:
-          name: stable-artifacts-${{ matrix.target_os }}
+          name: stable-artifacts-${{ matrix.target_os }}-${{ matrix.arch }}
           path: |
             *.tar.gz
             *.zip
@@ -174,12 +185,8 @@ jobs:
       - name: Download Linux Artifacts
         uses: actions/download-artifact@v7
         with:
-          name: stable-artifacts-linux
-          
-      - name: Download Windows Artifacts
-        uses: actions/download-artifact@v7
-        with:
-          name: stable-artifacts-windows
+          pattern: stable-artifacts-*
+          merge-multiple: true
 
       - name: Display Files
         run: ls -R
@@ -196,13 +203,27 @@ jobs:
     needs: check-updates
     if: needs.check-updates.outputs.nightly_needs_update == 'true'
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
             target_os: linux
+            arch: x64
           - os: windows-latest
             target_os: windows
+            arch: x64
+          - os: macos-latest
+            target_os: macos
+            arch: aarch64
+          - os: macos-15-intel
+            target_os: macos
+            arch: x64
+          - os: ubuntu-24.04-arm
+            target_os: linux
+            arch: aarch64
+          - os: windows-11-arm
+            target_os: windows
+            arch: aarch64
     runs-on: ${{ matrix.os }}
     steps:
       - name: Install Rust Nightly
@@ -223,7 +244,7 @@ jobs:
       - name: Package Toolchain
         shell: bash
         run: |
-          ARTIFACT_NAME="rust-nightly-${{ matrix.target_os }}-x64"
+          ARTIFACT_NAME="rust-nightly-${{ matrix.target_os }}-${{ matrix.arch }}"
           SYSROOT=$(rustc --print sysroot)
           echo "Packaging Sysroot: $SYSROOT"
           
@@ -238,7 +259,7 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v6
         with:
-          name: nightly-artifacts-${{ matrix.target_os }}
+          name: nightly-artifacts-${{ matrix.target_os }}-${{ matrix.arch }}
           path: |
             *.tar.gz
             *.zip
@@ -250,15 +271,11 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Download Linux Artifacts
+      - name: Download Artifacts
         uses: actions/download-artifact@v7
         with:
-          name: nightly-artifacts-linux
-          
-      - name: Download Windows Artifacts
-        uses: actions/download-artifact@v7
-        with:
-          name: nightly-artifacts-windows
+          pattern: nightly-artifacts-*
+          merge-multiple: true
 
       - name: Display Files
         run: ls -R
