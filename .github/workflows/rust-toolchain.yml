@@ -1,0 +1,233 @@
+name: Rust Toolchain Mirror
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+  push:
+    paths:
+      - 'manifest-parser/**'
+      - '.github/workflows/rust-toolchain.yml'
+
+permissions:
+  contents: write
+  packages: read
+
+jobs:
+  check-updates:
+    runs-on: ubuntu-latest
+    outputs:
+      stable_needs_update: ${{ steps.check.outputs.stable_needs_update }}
+      stable_version: ${{ steps.check.outputs.stable_version }}
+      nightly_needs_update: ${{ steps.check.outputs.nightly_needs_update }}
+      nightly_version: ${{ steps.check.outputs.nightly_version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fetch previous state
+        run: |
+          gh release download state-history -p state.json || echo "{}" > state.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+      - name: Run manifest-parser from Docker
+        id: check
+        run: |
+          IMAGE_NAME="ghcr.io/${{ github.repository }}/manifest-parser:latest"
+          docker pull $IMAGE_NAME
+          
+          docker run --rm -v ${{ github.workspace }}:/work -w /work $IMAGE_NAME \
+            --input state.json \
+            --output new_state.json \
+            --update-status status.json
+          
+          STATUS=$(cat status.json)
+          echo "Status: $STATUS"
+          
+          STABLE_UPDATE=$(echo $STATUS | jq -r .stable_needs_update)
+          STABLE_VER=$(echo $STATUS | jq -r .current.stable_version)
+          NIGHTLY_UPDATE=$(echo $STATUS | jq -r .nightly_needs_update)
+          NIGHTLY_VER=$(echo $STATUS | jq -r .current.nightly_version)
+          
+          echo "stable_needs_update=$STABLE_UPDATE" >> $GITHUB_OUTPUT
+          echo "stable_version=$STABLE_VER" >> $GITHUB_OUTPUT
+          echo "nightly_needs_update=$NIGHTLY_UPDATE" >> $GITHUB_OUTPUT
+          echo "nightly_version=$NIGHTLY_VER" >> $GITHUB_OUTPUT
+
+      - name: Update State History
+        if: steps.check.outputs.stable_needs_update == 'true' || steps.check.outputs.nightly_needs_update == 'true'
+        run: |
+          gh release create state-history new_state.json --title "State History" --notes "Auto-updated state history" --overwrite || gh release upload state-history new_state.json --clobber
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-stable:
+    needs: check-updates
+    if: needs.check-updates.outputs.stable_needs_update == 'true'
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target_os: linux
+          - os: windows-latest
+            target_os: windows
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Install Rust Stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify Version
+        shell: bash
+        run: |
+          # The check might fail if rustc output format changes or if the manifest parser logic is slightly different
+          # We check if the version string is contained in rustc --version output
+          INSTALLED_VER=$(rustc --version)
+          EXPECTED_VER="${{ needs.check-updates.outputs.stable_version }}"
+          echo "Installed: $INSTALLED_VER"
+          echo "Expected: $EXPECTED_VER"
+          if [[ "$INSTALLED_VER" != *"$EXPECTED_VER"* ]]; then
+            echo "Version mismatch!"
+            exit 1
+          fi
+
+      - name: Package Toolchain
+        shell: bash
+        run: |
+          # Use consistent naming for artifacts
+          # Windows uses zip, Linux uses tar.gz
+          # We need to distinguish OS in artifact filename inside the artifact bundle?
+          # Actually, if we just output a file, we can upload it.
+          
+          ARTIFACT_NAME="rust-stable-${{ matrix.target_os }}-x64"
+          SYSROOT=$(rustc --print sysroot)
+          echo "Packaging Sysroot: $SYSROOT"
+          
+          if [ "${{ matrix.target_os }}" == "windows" ]; then
+             7z a "${ARTIFACT_NAME}.zip" "$SYSROOT"
+          else
+             tar -czf "${ARTIFACT_NAME}.tar.gz" -C "$SYSROOT" .
+          fi
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stable-artifacts-${{ matrix.target_os }}
+          path: |
+            *.tar.gz
+            *.zip
+          retention-days: 1
+
+  release-stable:
+    needs: build-stable
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download Linux Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: stable-artifacts-linux
+          
+      - name: Download Windows Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: stable-artifacts-windows
+
+      - name: Display Files
+        run: ls -R
+
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: stable
+          files: |
+            *.tar.gz
+            *.zip
+          overwrite: true
+
+  build-nightly:
+    needs: check-updates
+    if: needs.check-updates.outputs.nightly_needs_update == 'true'
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target_os: linux
+          - os: windows-latest
+            target_os: windows
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Install Rust Nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Verify Version
+        shell: bash
+        run: |
+          INSTALLED_VER=$(rustc --version)
+          EXPECTED_VER="${{ needs.check-updates.outputs.nightly_version }}"
+          echo "Installed: $INSTALLED_VER"
+          echo "Expected: $EXPECTED_VER"
+          if [[ "$INSTALLED_VER" != *"$EXPECTED_VER"* ]]; then
+            echo "Version mismatch!"
+            exit 1
+          fi
+
+      - name: Package Toolchain
+        shell: bash
+        run: |
+          ARTIFACT_NAME="rust-nightly-${{ matrix.target_os }}-x64"
+          SYSROOT=$(rustc --print sysroot)
+          echo "Packaging Sysroot: $SYSROOT"
+          
+          if [ "${{ matrix.target_os }}" == "windows" ]; then
+             7z a "${ARTIFACT_NAME}.zip" "$SYSROOT"
+          else
+             tar -czf "${ARTIFACT_NAME}.tar.gz" -C "$SYSROOT" .
+          fi
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-artifacts-${{ matrix.target_os }}
+          path: |
+            *.tar.gz
+            *.zip
+          retention-days: 1
+
+  release-nightly:
+    needs: build-nightly
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download Linux Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: nightly-artifacts-linux
+          
+      - name: Download Windows Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: nightly-artifacts-windows
+
+      - name: Display Files
+        run: ls -R
+
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: nightly
+          files: |
+            *.tar.gz
+            *.zip
+          overwrite: true
