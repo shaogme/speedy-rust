@@ -4,6 +4,22 @@ on:
   schedule:
     - cron: '0 */6 * * *'
   workflow_dispatch:
+    inputs:
+      force_update_state:
+        description: 'Force update state.json'
+        required: false
+        default: false
+        type: boolean
+      force_publish_stable:
+        description: 'Force publish stable'
+        required: false
+        default: false
+        type: boolean
+      force_publish_nightly:
+        description: 'Force publish nightly'
+        required: false
+        default: false
+        type: boolean
   push:
     paths:
       - '.github/workflows/rust-toolchain.yml'
@@ -56,13 +72,35 @@ jobs:
           NIGHTLY_UPDATE=$(echo $STATUS | jq -r .nightly_needs_update)
           NIGHTLY_VER=$(echo $STATUS | jq -r .current.nightly_version)
           
+          # Handle manual force options
+          FORCE_STABLE="${{ inputs.force_publish_stable }}"
+          FORCE_NIGHTLY="${{ inputs.force_publish_nightly }}"
+          
+          if [[ "$FORCE_STABLE" == "true" ]]; then
+            echo "Forcing stable update..."
+            STABLE_UPDATE="true"
+          fi
+          
+          if [[ "$FORCE_NIGHTLY" == "true" ]]; then
+            echo "Forcing nightly update..."
+            NIGHTLY_UPDATE="true"
+          fi
+          
           echo "stable_needs_update=$STABLE_UPDATE" >> $GITHUB_OUTPUT
           echo "stable_version=$STABLE_VER" >> $GITHUB_OUTPUT
           echo "nightly_needs_update=$NIGHTLY_UPDATE" >> $GITHUB_OUTPUT
           echo "nightly_version=$NIGHTLY_VER" >> $GITHUB_OUTPUT
+          
+          # Determine if state history should be updated
+          FORCE_UPDATE_STATE="${{ inputs.force_update_state }}"
+          if [[ "$STABLE_UPDATE" == "true" ]] || [[ "$NIGHTLY_UPDATE" == "true" ]] || [[ "$FORCE_UPDATE_STATE" == "true" ]]; then
+             echo "should_update_state=true" >> $GITHUB_OUTPUT
+          else
+             echo "should_update_state=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Update State History
-        if: steps.check.outputs.stable_needs_update == 'true' || steps.check.outputs.nightly_needs_update == 'true'
+        if: steps.check.outputs.should_update_state == 'true'
         run: |
           gh release create state-history state.json --title "State History" --notes "Auto-updated state history" || gh release upload state-history state.json --clobber
         env:
@@ -111,7 +149,9 @@ jobs:
           echo "Packaging Sysroot: $SYSROOT"
           
           if [ "${{ matrix.target_os }}" == "windows" ]; then
-             7z a "${ARTIFACT_NAME}.zip" "$SYSROOT"
+             pushd "$SYSROOT"
+             7z a "${{ github.workspace }}/${ARTIFACT_NAME}.zip" * -r
+             popd
           else
              tar -czf "${ARTIFACT_NAME}.tar.gz" -C "$SYSROOT" .
           fi
@@ -188,7 +228,9 @@ jobs:
           echo "Packaging Sysroot: $SYSROOT"
           
           if [ "${{ matrix.target_os }}" == "windows" ]; then
-             7z a "${ARTIFACT_NAME}.zip" "$SYSROOT"
+             pushd "$SYSROOT"
+             7z a "${{ github.workspace }}/${ARTIFACT_NAME}.zip" * -r
+             popd
           else
              tar -czf "${ARTIFACT_NAME}.tar.gz" -C "$SYSROOT" .
           fi

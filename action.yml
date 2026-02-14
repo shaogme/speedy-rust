@@ -1,0 +1,100 @@
+name: 'Speedy Rust Setup'
+description: 'Fastest way to install Rust toolchains from speedy-rust mirror'
+author: 'shaogme'
+branding:
+  icon: 'zap'
+  color: 'orange'
+inputs:
+  toolchain:
+    description: 'Rust toolchain channel (stable or nightly)'
+    required: false
+    default: 'stable'
+  repository:
+    description: 'Repository to download artifacts from'
+    required: false
+    default: 'shaogme/speedy-rust'
+
+runs:
+  using: "composite"
+  steps:
+    - name: Download and Install Toolchain
+      shell: bash
+      env:
+        INPUT_TOOLCHAIN: ${{ inputs.toolchain }}
+        INPUT_REPO: ${{ inputs.repository }}
+      run: |
+        set -e
+        
+        # Detect OS
+        if [[ "$RUNNER_OS" == "Linux" ]]; then
+          OS_KEY="linux"
+          EXT="tar.gz"
+        elif [[ "$RUNNER_OS" == "Windows" ]]; then
+          OS_KEY="windows"
+          EXT="zip"
+        else
+          echo "::error::Unsupported OS: $RUNNER_OS"
+          exit 1
+        fi
+        
+        echo "Detected OS: $RUNNER_OS ($OS_KEY)"
+        
+        # Construct URL
+        FILENAME="rust-${INPUT_TOOLCHAIN}-${OS_KEY}-x64.${EXT}"
+        URL="https://github.com/${INPUT_REPO}/releases/download/${INPUT_TOOLCHAIN}/${FILENAME}"
+        
+        # Define install path (use runner temp to avoid workspace clutter)
+        INSTALL_DIR="${{ runner.temp }}/speedy-rust/${INPUT_TOOLCHAIN}"
+        mkdir -p "$INSTALL_DIR"
+        
+        echo "Downloading toolchain from: $URL"
+        
+        # Download
+        HTTP_CODE=$(curl -L -w "%{http_code}" -o "toolchain.${EXT}" "$URL")
+        if [[ "$HTTP_CODE" != "200" ]]; then
+          echo "::error::Failed to download toolchain. HTTP Code: $HTTP_CODE. URL: $URL"
+          exit 1
+        fi
+        
+        # Extract
+        echo "Extracting to: $INSTALL_DIR"
+        if [[ "$EXT" == "zip" ]]; then
+          # Windows - use 7z (available on GH runners)
+          7z x "toolchain.${EXT}" -o"$INSTALL_DIR" -y > /dev/null
+        else
+          # Linux - use tar
+          tar -xzf "toolchain.${EXT}" -C "$INSTALL_DIR"
+        fi
+        
+        # Cleanup archive
+        rm "toolchain.${EXT}"
+        
+        # Locate bin directory
+        # We expect bin/ to be at the root of INSTALL_DIR, but if the archive has a top-level folder, we search.
+        if [[ -d "$INSTALL_DIR/bin" ]]; then
+           BIN_PATH="$INSTALL_DIR/bin"
+        else
+           # Find bin folder (depth 1 or 2)
+           BIN_PATH=$(find "$INSTALL_DIR" -maxdepth 2 -name bin -type d | head -n 1)
+        fi
+        
+        if [[ -z "$BIN_PATH" ]]; then
+           echo "::error::Could not find 'bin' directory in extracted toolchain."
+           find "$INSTALL_DIR" -maxdepth 2
+           exit 1
+        fi
+        
+        echo "Found bin path: $BIN_PATH"
+        
+        # Add to PATH
+        echo "$BIN_PATH" >> $GITHUB_PATH
+        
+        # Export default toolchain override if needed?
+        # usually not needed if PATH handles it.
+        
+    - name: Verify Installation
+      shell: bash
+      run: |
+        echo "Verifying Rust installation..."
+        rustc --version
+        cargo --version
