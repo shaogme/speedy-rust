@@ -65,7 +65,7 @@ jobs:
       - name: Update State History
         if: steps.check.outputs.stable_needs_update == 'true' || steps.check.outputs.nightly_needs_update == 'true'
         run: |
-          gh release create state-history new_state.json --title "State History" --notes "Auto-updated state history" --overwrite || gh release upload state-history new_state.json --clobber
+          gh release create state-history new_state.json --title "State History" --notes "Auto-updated state history" || gh release upload state-history new_state.json --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
