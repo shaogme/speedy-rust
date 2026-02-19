@@ -167,12 +167,14 @@ jobs:
           if [ "${{ matrix.target_os }}" == "windows" ]; then
              pushd "$SYSROOT"
              # Main toolchain: exclude docs, man, src (std src might not be there but good practice)
-             7z a "${{ github.workspace }}/${ARTIFACT_NAME}.zip" * -r
+             7z a "${{ github.workspace }}/${ARTIFACT_NAME}.zip" * -r -x!share/doc -x!share/man
              popd
           else
              # Use zstd for better compression and speed
              # Main toolchain: exclude docs, man, and src if present
              tar -c \
+               --exclude='./share/doc' \
+               --exclude='./share/man' \
                -C "$SYSROOT" . | zstd -T0 -10 -o "${ARTIFACT_NAME}.tar.zst"
           fi
 
@@ -308,11 +310,13 @@ jobs:
           if [ "${{ matrix.target_os }}" == "windows" ]; then
              pushd "$SYSROOT"
              # Main toolchain: exclude docs, man, and src if present
-             7z a "${{ github.workspace }}/${ARTIFACT_NAME}.zip" * -r
+             7z a "${{ github.workspace }}/${ARTIFACT_NAME}.zip" * -r -x!share/doc -x!share/man
              popd
           else
              # Main toolchain: exclude docs, man, and src if present
              tar -c \
+               --exclude='./share/doc' \
+               --exclude='./share/man' \
                -C "$SYSROOT" . | zstd -T0 -10 -o "${ARTIFACT_NAME}.tar.zst"
           fi
 
