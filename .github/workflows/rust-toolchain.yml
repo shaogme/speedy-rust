@@ -68,9 +68,9 @@ jobs:
           echo "Status: $STATUS"
           
           STABLE_UPDATE=$(echo $STATUS | jq -r .stable_needs_update)
-          STABLE_VER=$(echo $STATUS | jq -r .current.stable_version)
+          STABLE_VER=$(echo $STATUS | jq -r .current.stable_full_string)
           NIGHTLY_UPDATE=$(echo $STATUS | jq -r .nightly_needs_update)
-          NIGHTLY_VER=$(echo $STATUS | jq -r .current.nightly_version)
+          NIGHTLY_VER=$(echo $STATUS | jq -r .current.nightly_full_string)
           
           # Handle manual force options
           FORCE_STABLE="${{ inputs.force_publish_stable }}"

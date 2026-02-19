@@ -39,6 +39,7 @@ struct RustPkg {
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 struct OutputVersions {
     stable_version: String,
+    stable_full_string: String,
     stable_hash: String,
     nightly_version: String,
     nightly_hash: String,
@@ -84,6 +85,7 @@ fn main() -> Result<()> {
 
     let current_state = OutputVersions {
         stable_version: stable_ver_num,
+        stable_full_string: stable.version,
         stable_hash: stable.git_commit_hash,
         nightly_version: nightly_ver_num, // clean version e.g. 1.78.0-nightly
         nightly_hash: nightly.git_commit_hash,
