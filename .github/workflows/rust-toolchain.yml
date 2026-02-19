@@ -167,14 +167,12 @@ jobs:
           if [ "${{ matrix.target_os }}" == "windows" ]; then
              pushd "$SYSROOT"
              # Main toolchain: exclude docs, man, src (std src might not be there but good practice)
-             7z a "${{ github.workspace }}/${ARTIFACT_NAME}.zip" * -r \
-               -xr!share/doc -xr!share/man -xr!lib/rustlib/src
+             7z a "${{ github.workspace }}/${ARTIFACT_NAME}.zip" * -r
              popd
           else
              # Use zstd for better compression and speed
              # Main toolchain: exclude docs, man, and src if present
              tar -c \
-               --exclude='./share/doc' --exclude='./share/man' --exclude='./lib/rustlib/src' \
                -C "$SYSROOT" . | zstd -T0 -10 -o "${ARTIFACT_NAME}.tar.zst"
           fi
 
@@ -310,13 +308,11 @@ jobs:
           if [ "${{ matrix.target_os }}" == "windows" ]; then
              pushd "$SYSROOT"
              # Main toolchain: exclude docs, man, and src if present
-             7z a "${{ github.workspace }}/${ARTIFACT_NAME}.zip" * -r \
-               -xr!share/doc -xr!share/man -xr!lib/rustlib/src
+             7z a "${{ github.workspace }}/${ARTIFACT_NAME}.zip" * -r
              popd
           else
              # Main toolchain: exclude docs, man, and src if present
              tar -c \
-               --exclude='./share/doc' --exclude='./share/man' --exclude='./lib/rustlib/src' \
                -C "$SYSROOT" . | zstd -T0 -10 -o "${ARTIFACT_NAME}.tar.zst"
           fi
 
