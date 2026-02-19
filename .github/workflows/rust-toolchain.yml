@@ -136,8 +136,8 @@ jobs:
       - name: Install Rust Stable
         shell: bash
         run: |
-          rustup toolchain install stable --profile default
-          rustup component add rust-src --toolchain stable
+          rustup toolchain uninstall stable || true
+          rustup toolchain install stable --profile minimal
           rustup default stable
 
       - name: Verify Version
@@ -161,29 +161,64 @@ jobs:
           
           ARTIFACT_NAME="rust-stable-${{ matrix.target_os }}-${{ matrix.arch }}"
           
-          # Source artifact name (platform independent content, but format depends on OS)
-          if [ "${{ matrix.target_os }}" == "windows" ]; then
-             SRC_ARTIFACT_NAME="rust-src-stable.zip"
-          else
-             SRC_ARTIFACT_NAME="rust-src-stable.tar.zst"
-          fi
-          
           SYSROOT=$(rustc --print sysroot)
-          echo "Packaging Sysroot: $SYSROOT"
+          echo "Packaging Sysroot (Base): $SYSROOT"
           
           if [ "${{ matrix.target_os }}" == "windows" ]; then
              pushd "$SYSROOT"
-             # Main toolchain: exclude docs, man, and src
-             7z a "${{ github.workspace }}/${ARTIFACT_NAME}.zip" * -r -xr!share/doc -xr!share/man -xr!lib/rustlib/src
-             # Source code only
-             7z a "${{ github.workspace }}/${SRC_ARTIFACT_NAME}" lib/rustlib/src -r
+             # Main toolchain: exclude docs, man, src (std src might not be there but good practice)
+             7z a "${{ github.workspace }}/${ARTIFACT_NAME}.zip" * -r \
+               -xr!share/doc -xr!share/man -xr!lib/rustlib/src
              popd
           else
              # Use zstd for better compression and speed
-             # Main toolchain: exclude docs, man, and src
-             tar -c --exclude='./share/doc' --exclude='./share/man' --exclude='./lib/rustlib/src' -C "$SYSROOT" . | zstd -T0 -10 -o "${ARTIFACT_NAME}.tar.zst"
+             # Main toolchain: exclude docs, man, and src if present
+             tar -c \
+               --exclude='./share/doc' --exclude='./share/man' --exclude='./lib/rustlib/src' \
+               -C "$SYSROOT" . | zstd -T0 -10 -o "${ARTIFACT_NAME}.tar.zst"
+          fi
+
+      - name: Install & Package Components
+        shell: bash
+        run: |
+          echo "Installing extra components..."
+          rustup component add rust-src rustfmt clippy rust-docs --toolchain stable
+          
+          if [ "${{ matrix.target_os }}" == "windows" ]; then
+             SRC_ARTIFACT_NAME="rust-src-stable.zip"
+             RUSTFMT_ARTIFACT_NAME="rust-rustfmt-stable-${{ matrix.target_os }}-${{ matrix.arch }}.zip"
+             CLIPPY_ARTIFACT_NAME="rust-clippy-stable-${{ matrix.target_os }}-${{ matrix.arch }}.zip"
+             DOCS_ARTIFACT_NAME="rust-docs-stable-${{ matrix.target_os }}-${{ matrix.arch }}.zip"
+          else
+             SRC_ARTIFACT_NAME="rust-src-stable.tar.zst"
+             RUSTFMT_ARTIFACT_NAME="rust-rustfmt-stable-${{ matrix.target_os }}-${{ matrix.arch }}.tar.zst"
+             CLIPPY_ARTIFACT_NAME="rust-clippy-stable-${{ matrix.target_os }}-${{ matrix.arch }}.tar.zst"
+             DOCS_ARTIFACT_NAME="rust-docs-stable-${{ matrix.target_os }}-${{ matrix.arch }}.tar.zst"
+          fi
+          
+          SYSROOT=$(rustc --print sysroot)
+          echo "Packaging Components from Sysroot: $SYSROOT"
+          
+          if [ "${{ matrix.target_os }}" == "windows" ]; then
+             pushd "$SYSROOT"
+             # Source code
+             7z a "${{ github.workspace }}/${SRC_ARTIFACT_NAME}" lib/rustlib/src -r
+             # Rustfmt
+             7z a "${{ github.workspace }}/${RUSTFMT_ARTIFACT_NAME}" bin/rustfmt.exe bin/cargo-fmt.exe
+             # Clippy
+             7z a "${{ github.workspace }}/${CLIPPY_ARTIFACT_NAME}" bin/clippy-driver.exe bin/cargo-clippy.exe
+             # Docs
+             7z a "${{ github.workspace }}/${DOCS_ARTIFACT_NAME}" share/doc -r
+             popd
+          else
              # Source code only
              tar -c -C "$SYSROOT" ./lib/rustlib/src | zstd -T0 -10 -o "${SRC_ARTIFACT_NAME}"
+             # Rustfmt
+             tar -c -C "$SYSROOT" ./bin/rustfmt ./bin/cargo-fmt | zstd -T0 -10 -o "${RUSTFMT_ARTIFACT_NAME}"
+             # Clippy
+             tar -c -C "$SYSROOT" ./bin/clippy-driver ./bin/cargo-clippy | zstd -T0 -10 -o "${CLIPPY_ARTIFACT_NAME}"
+             # Docs
+             tar -c -C "$SYSROOT" ./share/doc | zstd -T0 -10 -o "${DOCS_ARTIFACT_NAME}"
           fi
 
       - name: Upload Artifact
@@ -248,8 +283,8 @@ jobs:
       - name: Install Rust Nightly
         shell: bash
         run: |
-          rustup toolchain install nightly --profile default
-          rustup component add rust-src --toolchain nightly
+          rustup toolchain uninstall nightly || true
+          rustup toolchain install nightly --profile minimal
           rustup default nightly
 
       - name: Verify Version
@@ -269,28 +304,64 @@ jobs:
         run: |
           ARTIFACT_NAME="rust-nightly-${{ matrix.target_os }}-${{ matrix.arch }}"
           
-          # Source artifact name
-          if [ "${{ matrix.target_os }}" == "windows" ]; then
-             SRC_ARTIFACT_NAME="rust-src-nightly.zip"
-          else
-             SRC_ARTIFACT_NAME="rust-src-nightly.tar.zst"
-          fi
-          
           SYSROOT=$(rustc --print sysroot)
-          echo "Packaging Sysroot: $SYSROOT"
+          echo "Packaging Sysroot (Base): $SYSROOT"
           
           if [ "${{ matrix.target_os }}" == "windows" ]; then
              pushd "$SYSROOT"
-             # Main toolchain: exclude docs, man, and src
-             7z a "${{ github.workspace }}/${ARTIFACT_NAME}.zip" * -r -xr!share/doc -xr!share/man -xr!lib/rustlib/src
-             # Source code only
-             7z a "${{ github.workspace }}/${SRC_ARTIFACT_NAME}" lib/rustlib/src -r
+             # Main toolchain: exclude docs, man, and src if present
+             7z a "${{ github.workspace }}/${ARTIFACT_NAME}.zip" * -r \
+               -xr!share/doc -xr!share/man -xr!lib/rustlib/src
              popd
           else
-             # Main toolchain: exclude docs, man, and src
-             tar -c --exclude='./share/doc' --exclude='./share/man' --exclude='./lib/rustlib/src' -C "$SYSROOT" . | zstd -T0 -10 -o "${ARTIFACT_NAME}.tar.zst"
+             # Main toolchain: exclude docs, man, and src if present
+             tar -c \
+               --exclude='./share/doc' --exclude='./share/man' --exclude='./lib/rustlib/src' \
+               -C "$SYSROOT" . | zstd -T0 -10 -o "${ARTIFACT_NAME}.tar.zst"
+          fi
+
+      - name: Install & Package Components
+        shell: bash
+        run: |
+          echo "Installing extra components..."
+          rustup component add rust-src rustfmt clippy rust-docs --toolchain nightly
+          
+          # Artifact names
+          if [ "${{ matrix.target_os }}" == "windows" ]; then
+             SRC_ARTIFACT_NAME="rust-src-nightly.zip"
+             RUSTFMT_ARTIFACT_NAME="rust-rustfmt-nightly-${{ matrix.target_os }}-${{ matrix.arch }}.zip"
+             CLIPPY_ARTIFACT_NAME="rust-clippy-nightly-${{ matrix.target_os }}-${{ matrix.arch }}.zip"
+             DOCS_ARTIFACT_NAME="rust-docs-nightly-${{ matrix.target_os }}-${{ matrix.arch }}.zip"
+          else
+             SRC_ARTIFACT_NAME="rust-src-nightly.tar.zst"
+             RUSTFMT_ARTIFACT_NAME="rust-rustfmt-nightly-${{ matrix.target_os }}-${{ matrix.arch }}.tar.zst"
+             CLIPPY_ARTIFACT_NAME="rust-clippy-nightly-${{ matrix.target_os }}-${{ matrix.arch }}.tar.zst"
+             DOCS_ARTIFACT_NAME="rust-docs-nightly-${{ matrix.target_os }}-${{ matrix.arch }}.tar.zst"
+          fi
+          
+          SYSROOT=$(rustc --print sysroot)
+          echo "Packaging Components from Sysroot: $SYSROOT"
+          
+          if [ "${{ matrix.target_os }}" == "windows" ]; then
+             pushd "$SYSROOT"
+             # Source code
+             7z a "${{ github.workspace }}/${SRC_ARTIFACT_NAME}" lib/rustlib/src -r
+             # Rustfmt
+             7z a "${{ github.workspace }}/${RUSTFMT_ARTIFACT_NAME}" bin/rustfmt.exe bin/cargo-fmt.exe
+             # Clippy
+             7z a "${{ github.workspace }}/${CLIPPY_ARTIFACT_NAME}" bin/clippy-driver.exe bin/cargo-clippy.exe
+             # Docs
+             7z a "${{ github.workspace }}/${DOCS_ARTIFACT_NAME}" share/doc -r
+             popd
+          else
              # Source code only
              tar -c -C "$SYSROOT" ./lib/rustlib/src | zstd -T0 -10 -o "${SRC_ARTIFACT_NAME}"
+             # Rustfmt
+             tar -c -C "$SYSROOT" ./bin/rustfmt ./bin/cargo-fmt | zstd -T0 -10 -o "${RUSTFMT_ARTIFACT_NAME}"
+             # Clippy
+             tar -c -C "$SYSROOT" ./bin/clippy-driver ./bin/cargo-clippy | zstd -T0 -10 -o "${CLIPPY_ARTIFACT_NAME}"
+             # Docs
+             tar -c -C "$SYSROOT" ./share/doc | zstd -T0 -10 -o "${DOCS_ARTIFACT_NAME}"
           fi
 
       - name: Upload Artifact

@@ -98,54 +98,81 @@ runs:
                 for comp in "${COMPS[@]}"; do
                     # Trim whitespace
                     comp=$(echo "$comp" | xargs)
+                    COMPONENT_NAME=""
+                    NEED_DOWNLOAD="false"
+
                     if [[ "$comp" == "rustfmt" ]]; then
                         if "$INSTALL_DIR/bin/cargo-fmt" --version &> /dev/null || "$INSTALL_DIR/bin/rustfmt" --version &> /dev/null; then
-                            echo "Component '$comp' is installed (pre-packaged)."
+                            echo "Component '$comp' is installed."
                         else
-                            echo "::warning::Component '$comp' was requested but not found in the package."
+                            COMPONENT_NAME="rust-rustfmt"
+                            NEED_DOWNLOAD="true"
                         fi
                     elif [[ "$comp" == "clippy" ]]; then
                         if "$INSTALL_DIR/bin/cargo-clippy" --version &> /dev/null; then
-                            echo "Component '$comp' is installed (pre-packaged)."
+                            echo "Component '$comp' is installed."
                         else
-                            echo "::warning::Component '$comp' was requested but not found in the package."
+                            COMPONENT_NAME="rust-clippy"
+                            NEED_DOWNLOAD="true"
+                        fi
+                    elif [[ "$comp" == "rust-docs" ]]; then
+                        if [[ -d "$INSTALL_DIR/share/doc" ]]; then
+                            echo "Component '$comp' is installed."
+                        else
+                            COMPONENT_NAME="rust-docs"
+                            NEED_DOWNLOAD="true"
                         fi
                     elif [[ "$comp" == "rust-src" ]]; then
-                         SRC_DIR="$INSTALL_DIR/lib/rustlib/src/rust"
-                         if [[ -d "$SRC_DIR" ]]; then
-                            echo "Component '$comp' is installed (pre-packaged)."
+                         if [[ -d "$INSTALL_DIR/lib/rustlib/src/rust" ]]; then
+                            echo "Component '$comp' is installed."
                          else
-                            echo "Downloading component '$comp'..."
-                            
-                            # Construct source filename
-                            if [[ "$OS_KEY" == "windows" ]]; then
-                                SRC_FILENAME="rust-src-${INPUT_TOOLCHAIN}.zip"
-                            else
-                                SRC_FILENAME="rust-src-${INPUT_TOOLCHAIN}.tar.zst"
-                            fi
-                            
-                            SRC_URL="https://github.com/${INPUT_REPO}/releases/download/${INPUT_TOOLCHAIN}/${SRC_FILENAME}"
-                            
-                            echo "Downloading source from: $SRC_URL"
-                            
-                            if [[ "$OS_KEY" == "windows" ]]; then
-                                HTTP_CODE=$(curl -L -w "%{http_code}" -o "rust-src.zip" "$SRC_URL")
-                                if [[ "$HTTP_CODE" != "200" ]]; then
-                                    echo "::warning::Failed to download rust-src. HTTP Code: $HTTP_CODE. URL: $SRC_URL"
-                                else
-                                    echo "Extracting source..."
-                                    7z x "rust-src.zip" -o"$INSTALL_DIR" -y > /dev/null
-                                    rm "rust-src.zip"
-                                fi
-                            else
-                                echo "Streaming download and extraction with zstd..."
-                                curl -fL "$SRC_URL" | zstd -d --stdout | tar -x -C "$INSTALL_DIR" || {
-                                     echo "::warning::Failed to download or extract rust-src. URL: $SRC_URL"
-                                }
-                            fi
+                            COMPONENT_NAME="rust-src"
+                            NEED_DOWNLOAD="true"
                          fi
                     else
                         echo "::warning::Dynamic installation of component '$comp' is not supported for custom toolchains. Ignored."
+                    fi
+
+                    if [[ "$NEED_DOWNLOAD" == "true" ]]; then
+                         echo "Downloading component '$comp'..."
+                            
+                         # Construct component filename
+                         if [[ "$COMPONENT_NAME" == "rust-src" ]]; then
+                             # rust-src has different naming convention (no arch/os in name usually, but depends on packaging)
+                             # Based on toolchain yml, it is just rust-src-stable.zip or .tar.zst
+                             if [[ "$OS_KEY" == "windows" ]]; then
+                                 COMP_FILENAME="${COMPONENT_NAME}-${INPUT_TOOLCHAIN}.zip"
+                             else
+                                 COMP_FILENAME="${COMPONENT_NAME}-${INPUT_TOOLCHAIN}.tar.zst"
+                             fi
+                         else
+                             # Binaries like rustfmt, clippy need arch/os
+                             if [[ "$OS_KEY" == "windows" ]]; then
+                                 COMP_FILENAME="${COMPONENT_NAME}-${INPUT_TOOLCHAIN}-${OS_KEY}-${ARCH_KEY}.zip"
+                             else
+                                 COMP_FILENAME="${COMPONENT_NAME}-${INPUT_TOOLCHAIN}-${OS_KEY}-${ARCH_KEY}.tar.zst"
+                             fi
+                         fi
+                         
+                         COMP_URL="https://github.com/${INPUT_REPO}/releases/download/${INPUT_TOOLCHAIN}/${COMP_FILENAME}"
+                         
+                         echo "Downloading $comp from: $COMP_URL"
+                         
+                         if [[ "$OS_KEY" == "windows" ]]; then
+                             HTTP_CODE=$(curl -L -w "%{http_code}" -o "comp.zip" "$COMP_URL")
+                             if [[ "$HTTP_CODE" != "200" ]]; then
+                                 echo "::warning::Failed to download $comp. HTTP Code: $HTTP_CODE. URL: $COMP_URL"
+                             else
+                                 echo "Extracting $comp..."
+                                 7z x "comp.zip" -o"$INSTALL_DIR" -y > /dev/null
+                                 rm "comp.zip"
+                             fi
+                         else
+                             echo "Streaming download and extraction of $comp with zstd..."
+                             curl -fL "$COMP_URL" | zstd -d --stdout | tar -x -C "$INSTALL_DIR" || {
+                                  echo "::warning::Failed to download or extract $comp. URL: $COMP_URL"
+                             }
+                         fi
                     fi
                 done
             fi
