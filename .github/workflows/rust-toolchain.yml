@@ -134,7 +134,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Install Rust Stable
-        uses: dtolnay/rust-toolchain@stable
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile default
+          rustup component add rust-src --toolchain stable
+          rustup default stable
 
       - name: Verify Version
         shell: bash
@@ -156,17 +160,30 @@ jobs:
           # Windows uses zip, Linux/macOS uses tar.gz
           
           ARTIFACT_NAME="rust-stable-${{ matrix.target_os }}-${{ matrix.arch }}"
+          
+          # Source artifact name (platform independent content, but format depends on OS)
+          if [ "${{ matrix.target_os }}" == "windows" ]; then
+             SRC_ARTIFACT_NAME="rust-src-stable.zip"
+          else
+             SRC_ARTIFACT_NAME="rust-src-stable.tar.zst"
+          fi
+          
           SYSROOT=$(rustc --print sysroot)
           echo "Packaging Sysroot: $SYSROOT"
           
           if [ "${{ matrix.target_os }}" == "windows" ]; then
              pushd "$SYSROOT"
+             # Main toolchain: exclude docs, man, and src
              7z a "${{ github.workspace }}/${ARTIFACT_NAME}.zip" * -r -xr!share/doc -xr!share/man -xr!lib/rustlib/src
+             # Source code only
+             7z a "${{ github.workspace }}/${SRC_ARTIFACT_NAME}" lib/rustlib/src -r
              popd
           else
              # Use zstd for better compression and speed
-             # Exclude docs, man pages, and source code to reduce size
+             # Main toolchain: exclude docs, man, and src
              tar -c --exclude='./share/doc' --exclude='./share/man' --exclude='./lib/rustlib/src' -C "$SYSROOT" . | zstd -T0 -10 -o "${ARTIFACT_NAME}.tar.zst"
+             # Source code only
+             tar -c -C "$SYSROOT" ./lib/rustlib/src | zstd -T0 -10 -o "${SRC_ARTIFACT_NAME}"
           fi
 
       - name: Upload Artifact
@@ -229,7 +246,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Install Rust Nightly
-        uses: dtolnay/rust-toolchain@nightly
+        shell: bash
+        run: |
+          rustup toolchain install nightly --profile default
+          rustup component add rust-src --toolchain nightly
+          rustup default nightly
 
       - name: Verify Version
         shell: bash
@@ -247,15 +268,29 @@ jobs:
         shell: bash
         run: |
           ARTIFACT_NAME="rust-nightly-${{ matrix.target_os }}-${{ matrix.arch }}"
+          
+          # Source artifact name
+          if [ "${{ matrix.target_os }}" == "windows" ]; then
+             SRC_ARTIFACT_NAME="rust-src-nightly.zip"
+          else
+             SRC_ARTIFACT_NAME="rust-src-nightly.tar.zst"
+          fi
+          
           SYSROOT=$(rustc --print sysroot)
           echo "Packaging Sysroot: $SYSROOT"
           
           if [ "${{ matrix.target_os }}" == "windows" ]; then
              pushd "$SYSROOT"
+             # Main toolchain: exclude docs, man, and src
              7z a "${{ github.workspace }}/${ARTIFACT_NAME}.zip" * -r -xr!share/doc -xr!share/man -xr!lib/rustlib/src
+             # Source code only
+             7z a "${{ github.workspace }}/${SRC_ARTIFACT_NAME}" lib/rustlib/src -r
              popd
           else
+             # Main toolchain: exclude docs, man, and src
              tar -c --exclude='./share/doc' --exclude='./share/man' --exclude='./lib/rustlib/src' -C "$SYSROOT" . | zstd -T0 -10 -o "${ARTIFACT_NAME}.tar.zst"
+             # Source code only
+             tar -c -C "$SYSROOT" ./lib/rustlib/src | zstd -T0 -10 -o "${SRC_ARTIFACT_NAME}"
           fi
 
       - name: Upload Artifact

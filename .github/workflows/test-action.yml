@@ -51,10 +51,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Rust ${{ matrix.toolchain }}
+      - name: Install Rust ${{ matrix.toolchain }} (Components)
         uses: ./
         with:
           toolchain: ${{ matrix.toolchain }}
+          components: rustfmt, clippy, rust-src
 
       - name: Verify Installation
         shell: bash
@@ -62,4 +63,24 @@ jobs:
           echo "Verifying rustc and cargo versions..."
           rustc --version
           cargo --version
-          echo "Installation verified successfully."
+          
+          echo "Verifying rustfmt..."
+          cargo fmt --version
+          
+          echo "Verifying clippy..."
+          cargo clippy --version
+          
+          echo "Verifying rust-src..."
+          SYSROOT=$(rustc --print sysroot)
+          SRC_PATH="$SYSROOT/lib/rustlib/src/rust"
+          echo "Checking for src at: $SRC_PATH"
+          
+          if [[ -d "$SRC_PATH" ]]; then
+             echo "✅ rust-src is installed."
+             ls -F "$SRC_PATH" | head -n 5
+          else
+             echo "❌ rust-src directory not found!"
+             exit 1
+          fi
+          
+          echo "All verification steps passed."

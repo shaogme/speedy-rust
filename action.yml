@@ -9,6 +9,10 @@ inputs:
     description: 'Rust toolchain channel (stable or nightly)'
     required: false
     default: 'stable'
+  components:
+    description: 'Comma-separated list of extra components to install (e.g. rustfmt, clippy, rust-src)'
+    required: false
+    default: ''
   repository:
     description: 'Repository to download artifacts from'
     required: false
@@ -21,6 +25,7 @@ runs:
       shell: bash
       env:
         INPUT_TOOLCHAIN: ${{ inputs.toolchain }}
+        INPUT_COMPONENTS: ${{ inputs.components }}
         INPUT_REPO: ${{ inputs.repository }}
       run: |
         set -e
@@ -83,6 +88,67 @@ runs:
              exit 1
           }
         fi
+        
+            # Helper function to check components
+            if [[ -n "$INPUT_COMPONENTS" ]]; then
+                echo "Checking requested components: $INPUT_COMPONENTS"
+                # Replace commas with spaces
+                IFS=',' read -ra COMPS <<< "$INPUT_COMPONENTS"
+                
+                for comp in "${COMPS[@]}"; do
+                    # Trim whitespace
+                    comp=$(echo "$comp" | xargs)
+                    if [[ "$comp" == "rustfmt" ]]; then
+                        if "$INSTALL_DIR/bin/cargo-fmt" --version &> /dev/null || "$INSTALL_DIR/bin/rustfmt" --version &> /dev/null; then
+                            echo "Component '$comp' is installed (pre-packaged)."
+                        else
+                            echo "::warning::Component '$comp' was requested but not found in the package."
+                        fi
+                    elif [[ "$comp" == "clippy" ]]; then
+                        if "$INSTALL_DIR/bin/cargo-clippy" --version &> /dev/null; then
+                            echo "Component '$comp' is installed (pre-packaged)."
+                        else
+                            echo "::warning::Component '$comp' was requested but not found in the package."
+                        fi
+                    elif [[ "$comp" == "rust-src" ]]; then
+                         SRC_DIR="$INSTALL_DIR/lib/rustlib/src/rust"
+                         if [[ -d "$SRC_DIR" ]]; then
+                            echo "Component '$comp' is installed (pre-packaged)."
+                         else
+                            echo "Downloading component '$comp'..."
+                            
+                            # Construct source filename
+                            if [[ "$OS_KEY" == "windows" ]]; then
+                                SRC_FILENAME="rust-src-${INPUT_TOOLCHAIN}.zip"
+                            else
+                                SRC_FILENAME="rust-src-${INPUT_TOOLCHAIN}.tar.zst"
+                            fi
+                            
+                            SRC_URL="https://github.com/${INPUT_REPO}/releases/download/${INPUT_TOOLCHAIN}/${SRC_FILENAME}"
+                            
+                            echo "Downloading source from: $SRC_URL"
+                            
+                            if [[ "$OS_KEY" == "windows" ]]; then
+                                HTTP_CODE=$(curl -L -w "%{http_code}" -o "rust-src.zip" "$SRC_URL")
+                                if [[ "$HTTP_CODE" != "200" ]]; then
+                                    echo "::warning::Failed to download rust-src. HTTP Code: $HTTP_CODE. URL: $SRC_URL"
+                                else
+                                    echo "Extracting source..."
+                                    7z x "rust-src.zip" -o"$INSTALL_DIR" -y > /dev/null
+                                    rm "rust-src.zip"
+                                fi
+                            else
+                                echo "Streaming download and extraction with zstd..."
+                                curl -fL "$SRC_URL" | zstd -d --stdout | tar -x -C "$INSTALL_DIR" || {
+                                     echo "::warning::Failed to download or extract rust-src. URL: $SRC_URL"
+                                }
+                            fi
+                         fi
+                    else
+                        echo "::warning::Dynamic installation of component '$comp' is not supported for custom toolchains. Ignored."
+                    fi
+                done
+            fi
         
         # Locate bin directory
         # We expect bin/ to be at the root of INSTALL_DIR, but if the archive has a top-level folder, we search.
