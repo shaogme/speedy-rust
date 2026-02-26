@@ -69,7 +69,7 @@ runs:
         
         if [[ "$OS_KEY" == "windows" ]]; then
           # Windows: Download then extract
-          HTTP_CODE=$(curl -L -w "%{http_code}" -o "toolchain.zip" "$URL")
+          HTTP_CODE=$(curl --retry 5 --retry-delay 5 --retry-all-errors -L -w "%{http_code}" -o "toolchain.zip" "$URL")
           if [[ "$HTTP_CODE" != "200" ]]; then
             echo "::error::Failed to download toolchain. HTTP Code: $HTTP_CODE. URL: $URL"
             exit 1
@@ -83,113 +83,113 @@ runs:
           # Use explicit zstd decompression pipe to avoid tar subprocess issues (broken pipe on macOS)
           echo "Streaming download and extraction to: $INSTALL_DIR"
           
-          curl -fL "$URL" | zstd -d --stdout | tar -x -C "$INSTALL_DIR" || {
-             echo "::error::Failed to download or extract toolchain. URL: $URL"
-             exit 1
+          curl --retry 5 --retry-delay 5 --retry-all-errors -fL "$URL" | zstd -d --stdout | tar -x -C "$INSTALL_DIR" || {
+            echo "::error::Failed to download or extract toolchain. URL: $URL"
+            exit 1
           }
         fi
         
-            # Helper function to check components
-            if [[ -n "$INPUT_COMPONENTS" ]]; then
-                echo "Checking requested components: $INPUT_COMPONENTS"
-                # Replace commas with spaces
-                IFS=',' read -ra COMPS <<< "$INPUT_COMPONENTS"
-                
-                for comp in "${COMPS[@]}"; do
-                    # Trim whitespace
-                    comp=$(echo "$comp" | xargs)
-                    COMPONENT_NAME=""
-                    NEED_DOWNLOAD="false"
+        # Helper function to check components
+        if [[ -n "$INPUT_COMPONENTS" ]]; then
+          echo "Checking requested components: $INPUT_COMPONENTS"
+          # Replace commas with spaces
+          IFS=',' read -ra COMPS <<< "$INPUT_COMPONENTS"
+          
+          for comp in "${COMPS[@]}"; do
+            # Trim whitespace
+            comp=$(echo "$comp" | xargs)
+            COMPONENT_NAME=""
+            NEED_DOWNLOAD="false"
 
-                    if [[ "$comp" == "rustfmt" ]]; then
-                        if "$INSTALL_DIR/bin/cargo-fmt" --version &> /dev/null || "$INSTALL_DIR/bin/rustfmt" --version &> /dev/null; then
-                            echo "Component '$comp' is installed."
-                        else
-                            COMPONENT_NAME="rust-rustfmt"
-                            NEED_DOWNLOAD="true"
-                        fi
-                    elif [[ "$comp" == "clippy" ]]; then
-                        if "$INSTALL_DIR/bin/cargo-clippy" --version &> /dev/null; then
-                            echo "Component '$comp' is installed."
-                        else
-                            COMPONENT_NAME="rust-clippy"
-                            NEED_DOWNLOAD="true"
-                        fi
-                    elif [[ "$comp" == "rust-docs" ]]; then
-                        if [[ -d "$INSTALL_DIR/share/doc" ]]; then
-                            echo "Component '$comp' is installed."
-                        else
-                            COMPONENT_NAME="rust-docs"
-                            NEED_DOWNLOAD="true"
-                        fi
-                    elif [[ "$comp" == "rust-src" ]]; then
-                         if [[ -d "$INSTALL_DIR/lib/rustlib/src/rust" ]]; then
-                            echo "Component '$comp' is installed."
-                         else
-                            COMPONENT_NAME="rust-src"
-                            NEED_DOWNLOAD="true"
-                         fi
-                    else
-                        echo "::warning::Dynamic installation of component '$comp' is not supported for custom toolchains. Ignored."
-                    fi
-
-                    if [[ "$NEED_DOWNLOAD" == "true" ]]; then
-                         echo "Downloading component '$comp'..."
-                            
-                         # Construct component filename
-                         if [[ "$COMPONENT_NAME" == "rust-src" ]]; then
-                             # rust-src has different naming convention (no arch/os in name usually, but depends on packaging)
-                             # Based on toolchain yml, it is just rust-src-stable.zip or .tar.zst
-                             if [[ "$OS_KEY" == "windows" ]]; then
-                                 COMP_FILENAME="${COMPONENT_NAME}-${INPUT_TOOLCHAIN}.zip"
-                             else
-                                 COMP_FILENAME="${COMPONENT_NAME}-${INPUT_TOOLCHAIN}.tar.zst"
-                             fi
-                         else
-                             # Binaries like rustfmt, clippy need arch/os
-                             if [[ "$OS_KEY" == "windows" ]]; then
-                                 COMP_FILENAME="${COMPONENT_NAME}-${INPUT_TOOLCHAIN}-${OS_KEY}-${ARCH_KEY}.zip"
-                             else
-                                 COMP_FILENAME="${COMPONENT_NAME}-${INPUT_TOOLCHAIN}-${OS_KEY}-${ARCH_KEY}.tar.zst"
-                             fi
-                         fi
-                         
-                         COMP_URL="https://github.com/${INPUT_REPO}/releases/download/${INPUT_TOOLCHAIN}/${COMP_FILENAME}"
-                         
-                         echo "Downloading $comp from: $COMP_URL"
-                         
-                         if [[ "$OS_KEY" == "windows" ]]; then
-                             HTTP_CODE=$(curl -L -w "%{http_code}" -o "comp.zip" "$COMP_URL")
-                             if [[ "$HTTP_CODE" != "200" ]]; then
-                                 echo "::warning::Failed to download $comp. HTTP Code: $HTTP_CODE. URL: $COMP_URL"
-                             else
-                                 echo "Extracting $comp..."
-                                 7z x "comp.zip" -o"$INSTALL_DIR" -y > /dev/null
-                                 rm "comp.zip"
-                             fi
-                         else
-                             echo "Streaming download and extraction of $comp with zstd..."
-                             curl -fL "$COMP_URL" | zstd -d --stdout | tar -x -C "$INSTALL_DIR" || {
-                                  echo "::warning::Failed to download or extract $comp. URL: $COMP_URL"
-                             }
-                         fi
-                    fi
-                done
+            if [[ "$comp" == "rustfmt" ]]; then
+              if "$INSTALL_DIR/bin/cargo-fmt" --version &> /dev/null || "$INSTALL_DIR/bin/rustfmt" --version &> /dev/null; then
+                echo "Component '$comp' is installed."
+              else
+                COMPONENT_NAME="rust-rustfmt"
+                NEED_DOWNLOAD="true"
+              fi
+            elif [[ "$comp" == "clippy" ]]; then
+              if "$INSTALL_DIR/bin/cargo-clippy" --version &> /dev/null; then
+                echo "Component '$comp' is installed."
+              else
+                COMPONENT_NAME="rust-clippy"
+                NEED_DOWNLOAD="true"
+              fi
+            elif [[ "$comp" == "rust-docs" ]]; then
+              if [[ -d "$INSTALL_DIR/share/doc" ]]; then
+                echo "Component '$comp' is installed."
+              else
+                COMPONENT_NAME="rust-docs"
+                NEED_DOWNLOAD="true"
+              fi
+            elif [[ "$comp" == "rust-src" ]]; then
+              if [[ -d "$INSTALL_DIR/lib/rustlib/src/rust" ]]; then
+                echo "Component '$comp' is installed."
+              else
+                COMPONENT_NAME="rust-src"
+                NEED_DOWNLOAD="true"
+              fi
+            else
+              echo "::warning::Dynamic installation of component '$comp' is not supported for custom toolchains. Ignored."
             fi
+
+            if [[ "$NEED_DOWNLOAD" == "true" ]]; then
+              echo "Downloading component '$comp'..."
+              
+              # Construct component filename
+              if [[ "$COMPONENT_NAME" == "rust-src" ]]; then
+                # rust-src has different naming convention (no arch/os in name usually, but depends on packaging)
+                # Based on toolchain yml, it is just rust-src-stable.zip or .tar.zst
+                if [[ "$OS_KEY" == "windows" ]]; then
+                  COMP_FILENAME="${COMPONENT_NAME}-${INPUT_TOOLCHAIN}.zip"
+                else
+                  COMP_FILENAME="${COMPONENT_NAME}-${INPUT_TOOLCHAIN}.tar.zst"
+                fi
+              else
+                # Binaries like rustfmt, clippy need arch/os
+                if [[ "$OS_KEY" == "windows" ]]; then
+                  COMP_FILENAME="${COMPONENT_NAME}-${INPUT_TOOLCHAIN}-${OS_KEY}-${ARCH_KEY}.zip"
+                else
+                  COMP_FILENAME="${COMPONENT_NAME}-${INPUT_TOOLCHAIN}-${OS_KEY}-${ARCH_KEY}.tar.zst"
+                fi
+              fi
+              
+              COMP_URL="https://github.com/${INPUT_REPO}/releases/download/${INPUT_TOOLCHAIN}/${COMP_FILENAME}"
+              
+              echo "Downloading $comp from: $COMP_URL"
+              
+              if [[ "$OS_KEY" == "windows" ]]; then
+                HTTP_CODE=$(curl --retry 5 --retry-delay 5 --retry-all-errors -L -w "%{http_code}" -o "comp.zip" "$COMP_URL")
+                if [[ "$HTTP_CODE" != "200" ]]; then
+                  echo "::warning::Failed to download $comp. HTTP Code: $HTTP_CODE. URL: $COMP_URL"
+                else
+                  echo "Extracting $comp..."
+                  7z x "comp.zip" -o"$INSTALL_DIR" -y > /dev/null
+                  rm "comp.zip"
+                fi
+              else
+                echo "Streaming download and extraction of $comp with zstd..."
+                curl --retry 5 --retry-delay 5 --retry-all-errors -fL "$COMP_URL" | zstd -d --stdout | tar -x -C "$INSTALL_DIR" || {
+                  echo "::warning::Failed to download or extract $comp. URL: $COMP_URL"
+                }
+              fi
+            fi
+          done
+        fi
         
         # Locate bin directory
         # We expect bin/ to be at the root of INSTALL_DIR, but if the archive has a top-level folder, we search.
         if [[ -d "$INSTALL_DIR/bin" ]]; then
-           BIN_PATH="$INSTALL_DIR/bin"
+          BIN_PATH="$INSTALL_DIR/bin"
         else
-           # Find bin folder (depth 1 or 2)
-           BIN_PATH=$(find "$INSTALL_DIR" -maxdepth 2 -name bin -type d | head -n 1)
+          # Find bin folder (depth 1 or 2)
+          BIN_PATH=$(find "$INSTALL_DIR" -maxdepth 2 -name bin -type d | head -n 1)
         fi
         
         if [[ -z "$BIN_PATH" ]]; then
-           echo "::error::Could not find 'bin' directory in extracted toolchain."
-           find "$INSTALL_DIR" -maxdepth 2
-           exit 1
+          echo "::error::Could not find 'bin' directory in extracted toolchain."
+          find "$INSTALL_DIR" -maxdepth 2
+          exit 1
         fi
         
         echo "Found bin path: $BIN_PATH"
@@ -197,6 +197,7 @@ runs:
         # Add to PATH
         echo "$BIN_PATH" >> $GITHUB_PATH
         
+
         # Export default toolchain override if needed?
         # usually not needed if PATH handles it.
         
